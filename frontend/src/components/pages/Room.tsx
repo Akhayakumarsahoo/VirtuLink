@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useSocket } from "../contexts/SocketProvider";
 import { useParams, useNavigate } from "react-router-dom";
+import {
+  Video,
+  VideoOff,
+  Mic,
+  MicOff,
+  LogOut,
+  FlipHorizontal,
+  MonitorSmartphone,
+  ClipboardCopy,
+  Users,
+} from "lucide-react";
 
 declare global {
   interface Window {
@@ -13,6 +24,9 @@ interface VideoItem {
   stream: MediaStream;
   autoplay: boolean;
   playsinline: boolean;
+  username?: string;
+  isVideoOn?: boolean;
+  isAudioOn?: boolean;
 }
 
 const peerConfigConnections = {
@@ -21,6 +35,23 @@ const peerConfigConnections = {
 
 // Fix: Using an object instead of array for connections
 const connections: Record<string, RTCPeerConnection> = {};
+
+// Utility function to generate consistent avatar colors
+const getAvatarColors = (identifier: string) => {
+  // Get a consistent hash code from the string
+  const hash = identifier.split("").reduce((acc, char) => {
+    return char.charCodeAt(0) + ((acc << 5) - acc);
+  }, 0);
+
+  // Generate colors based on the hash
+  const h = Math.abs(hash) % 360;
+
+  // Create two slightly different hues for gradient
+  return {
+    from: `hsl(${h}, 70%, 50%)`,
+    to: `hsl(${(h + 30) % 360}, 70%, 45%)`,
+  };
+};
 
 function Room() {
   const socket = useSocket();
@@ -42,7 +73,8 @@ function Room() {
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [screenShareAvailable, setScreenShareAvailable] =
     useState<boolean>(false);
-  // const [screenAvailable, setScreenAvailable] = useState(false);
+  const [isMirrored, setIsMirrored] = useState<boolean>(true);
+  const [users, setUsers] = useState<Record<string, { username: string }>>({});
 
   const getPermissions = async () => {
     try {
@@ -50,8 +82,6 @@ function Room() {
         video: true,
         audio: true,
       });
-      // const hasVideo = stream.getVideoTracks().length > 0;
-      // const hasAudio = stream.getAudioTracks().length > 0;
       setVideoAvailable(true);
       setAudioAvailable(true);
 
@@ -210,9 +240,10 @@ function Room() {
     const joinRoom = () => {
       if (socket && socket.connected && roomName) {
         console.log(`Joining room: ${roomName}`);
+        const username = localStorage.getItem("username") || undefined;
         socket.emit("join:room", {
           room: roomName,
-          username: localStorage.getItem("username") || undefined,
+          username: username,
         });
       } else {
         console.error(
@@ -230,11 +261,17 @@ function Room() {
     socket.off("pong");
     socket.off("room:joined");
     socket.off("error");
+    socket.off("media:status-update");
 
     // Handle successful room joining
     socket.on("room:joined", (data) => {
       console.log("Successfully joined room:", data);
       setConnectionStatus("connected");
+
+      // If the server sends user data with the room join response
+      if (data.users) {
+        setUsers(data.users);
+      }
     });
 
     // Handle errors
@@ -277,9 +314,17 @@ function Room() {
       }
     });
 
-    socket.on("user:joined", (id, clients) => {
-      console.log(id, clients);
+    socket.on("user:joined", (id, clients, userData) => {
+      console.log(id, clients, userData);
       setConnectionStatus("connected");
+
+      // Update users data if provided
+      if (userData) {
+        setUsers((prevUsers) => ({
+          ...prevUsers,
+          ...userData,
+        }));
+      }
 
       clients.forEach((socketListId: string) => {
         connections[socketListId] = new RTCPeerConnection(
@@ -317,12 +362,35 @@ function Room() {
             (video) => video.socketId === socketListId
           );
 
+          // Get username for this user from the socket user list
+          const username =
+            users?.[socketListId]?.username ||
+            `User-${socketListId.substring(0, 5)}`;
+
           if (videoExists) {
             //Update the Stream of the existing videos
-            setVideos((videos) => {
-              const updatedVideos = videos.map((video) =>
-                video.socketId === socketListId ? { ...video, stream } : video
+            setVideos((prevVideos) => {
+              // First filter out any potential duplicates
+              const filteredVideos = prevVideos.filter(
+                (video) => video.socketId !== socketListId
               );
+
+              // Then add the updated video
+              const updatedVideo = {
+                ...videoExists,
+                stream,
+                username: username,
+                isVideoOn:
+                  videoExists.isVideoOn !== undefined
+                    ? videoExists.isVideoOn
+                    : true,
+                isAudioOn:
+                  videoExists.isAudioOn !== undefined
+                    ? videoExists.isAudioOn
+                    : true,
+              };
+
+              const updatedVideos = [...filteredVideos, updatedVideo];
               videoRef.current = updatedVideos;
               return updatedVideos;
             });
@@ -333,9 +401,17 @@ function Room() {
               stream,
               autoplay: true,
               playsinline: true,
+              username: username,
+              isVideoOn: true, // Default value, will be updated via media:status events
+              isAudioOn: true, // Default value, will be updated via media:status events
             };
-            setVideos((videos) => {
-              const updatedVideos = [...videos, newVideo];
+            setVideos((prevVideos) => {
+              // First filter out any potential duplicates
+              const filteredVideos = prevVideos.filter(
+                (video) => video.socketId !== socketListId
+              );
+
+              const updatedVideos = [...filteredVideos, newVideo];
               videoRef.current = updatedVideos;
               return updatedVideos;
             });
@@ -439,13 +515,56 @@ function Room() {
         delete connections[id];
       }
 
-      setVideos((videos) => videos.filter((video) => video.socketId !== id));
+      setVideos((prevVideos) => {
+        const filteredVideos = prevVideos.filter(
+          (video) => video.socketId !== id
+        );
+        // Update videoRef.current to maintain consistency
+        videoRef.current = filteredVideos;
+        return filteredVideos;
+      });
     });
 
     // Add pong handler
     socket.on("pong", () => {
       console.log("Received pong from server");
     });
+
+    // Add handler for media status updates from other users
+    socket.on(
+      "media:status-update",
+      (userId, username, isVideoOn, isAudioOn) => {
+        console.log(
+          `Received media status update from ${userId}: video=${isVideoOn}, audio=${isAudioOn}`
+        );
+
+        setVideos((prevVideos) => {
+          // Check if we already have this user
+          const userExists = prevVideos.some(
+            (video) => video.socketId === userId
+          );
+
+          if (userExists) {
+            // Update existing user's media status
+            return prevVideos.map((video) => {
+              if (video.socketId === userId) {
+                return {
+                  ...video,
+                  username: username,
+                  isVideoOn: isVideoOn,
+                  isAudioOn: isAudioOn,
+                };
+              }
+              return video;
+            });
+          } else {
+            // This shouldn't normally happen, but log it if it does
+            console.warn(`Received media status for unknown user: ${userId}`);
+            return prevVideos;
+          }
+        });
+      }
+    );
 
     return () => {
       // Clear ping interval
@@ -537,12 +656,57 @@ function Room() {
     }
   }, [video, audio, videoAvailable, audioAvailable]);
 
+  // Add this new function to track media status changes
+  const updateLocalMediaStatus = () => {
+    if (!socket || !roomName) return;
+
+    // Send an update about our media status to everyone in the room
+    socket.emit("media:status", {
+      room: roomName,
+      isVideoOn: video,
+      isAudioOn: audio,
+    });
+  };
+
+  // Update toggleVideo and toggleAudio to notify others about status changes
   const toggleVideo = () => {
-    setVideo((prev) => !prev);
+    setVideo((prev) => {
+      const newStatus = !prev;
+      // Update tracks if we have a stream
+      if (window.localStream) {
+        const videoTracks = window.localStream.getVideoTracks();
+        if (videoTracks.length > 0) {
+          videoTracks.forEach((track) => {
+            track.enabled = newStatus;
+          });
+        }
+      }
+
+      // Notify other users about our video status change
+      setTimeout(() => updateLocalMediaStatus(), 100);
+
+      return newStatus;
+    });
   };
 
   const toggleAudio = () => {
-    setAudio((prev) => !prev);
+    setAudio((prev) => {
+      const newStatus = !prev;
+      // Update tracks if we have a stream
+      if (window.localStream) {
+        const audioTracks = window.localStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          audioTracks.forEach((track) => {
+            track.enabled = newStatus;
+          });
+        }
+      }
+
+      // Notify other users about our audio status change
+      setTimeout(() => updateLocalMediaStatus(), 100);
+
+      return newStatus;
+    });
   };
 
   const toggleScreenShare = async () => {
@@ -592,6 +756,10 @@ function Room() {
     }
   };
 
+  const toggleMirror = () => {
+    setIsMirrored((prev) => !prev);
+  };
+
   const leaveRoom = () => {
     // Notify server about leaving
     if (socket) {
@@ -632,204 +800,339 @@ function Room() {
     );
   };
 
+  // Send initial media status when stream is available
+  useEffect(() => {
+    if (
+      socket &&
+      socket.connected &&
+      videoAvailable !== undefined &&
+      audioAvailable !== undefined
+    ) {
+      updateLocalMediaStatus();
+    }
+  }, [socket?.connected, videoAvailable, audioAvailable]);
+
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Video Room: {roomName}</h1>
-
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center">
-          <span
-            className={`inline-block w-3 h-3 rounded-full mr-2 ${
-              connectionStatus === "connected"
-                ? "bg-green-500"
-                : connectionStatus === "connecting"
-                ? "bg-yellow-500"
-                : "bg-red-500"
-            }`}
-          ></span>
-          <span className="text-sm">
-            {connectionStatus === "connected"
-              ? "Connected"
-              : connectionStatus === "connecting"
-              ? "Connecting..."
-              : "Disconnected"}
-          </span>
-          <span className="ml-4 text-sm">
-            {videos.length}{" "}
-            {videos.length === 1 ? "participant" : "participants"} in call
-          </span>
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={copyRoomLink}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center"
-          >
-            {copySuccess ? "Copied!" : "Copy Room Link"}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 ml-2"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-              <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-            </svg>
-          </button>
-          <button
-            onClick={leaveRoom}
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-          >
-            Leave Room
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-6">
-        <div className="relative w-full max-w-md mb-4">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            className="w-full h-auto border rounded"
-          ></video>
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
-            <button
-              onClick={toggleVideo}
-              className={`px-4 py-2 rounded-full flex items-center justify-center w-12 h-12 ${
-                video ? "bg-blue-500 text-white" : "bg-red-500 text-white"
-              }`}
-              title={video ? "Turn Off Video" : "Turn On Video"}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                {video ? (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                ) : (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-                  />
-                )}
-              </svg>
-            </button>
-            <button
-              onClick={toggleAudio}
-              className={`px-4 py-2 rounded-full flex items-center justify-center w-12 h-12 ${
-                audio ? "bg-blue-500 text-white" : "bg-red-500 text-white"
-              }`}
-              title={audio ? "Mute Audio" : "Unmute Audio"}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                {audio ? (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                  />
-                ) : (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                    strokeDasharray="2 2"
-                  />
-                )}
-              </svg>
-            </button>
-            {screenShareAvailable && (
-              <button
-                onClick={toggleScreenShare}
-                className={`px-4 py-2 rounded-full flex items-center justify-center w-12 h-12 ${
-                  isScreenSharing
-                    ? "bg-green-500 text-white"
-                    : "bg-blue-500 text-white"
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <h1 className="text-xl font-semibold text-gray-800">
+              Room: {roomName}
+            </h1>
+            <div className="flex items-center space-x-2">
+              <span
+                className={`inline-block w-3 h-3 rounded-full ${
+                  connectionStatus === "connected"
+                    ? "bg-green-500"
+                    : connectionStatus === "connecting"
+                    ? "bg-yellow-500"
+                    : "bg-red-500"
                 }`}
-                title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                  />
-                </svg>
-              </button>
-            )}
+              ></span>
+              <span className="text-sm text-gray-600">{connectionStatus}</span>
+            </div>
+            <div className="flex items-center space-x-1 rounded-full bg-blue-50 px-3 py-1">
+              <Users className="h-4 w-4 text-blue-600 mr-1" />
+              <span className="text-sm font-medium text-blue-700">
+                {videos.length}{" "}
+                {videos.length === 1 ? "participant" : "participants"}
+              </span>
+            </div>
           </div>
-          {!videoAvailable && !audioAvailable && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white">
-              <p>
-                Camera and microphone access denied. Please check your browser
-                permissions.
-              </p>
-            </div>
-          )}
-          {isScreenSharing && (
-            <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-sm">
-              Screen Sharing
-            </div>
-          )}
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={copyRoomLink}
+              className="px-3 py-2 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors flex items-center text-sm font-medium"
+            >
+              {copySuccess ? "Copied!" : "Copy Link"}
+              <ClipboardCopy className="h-4 w-4 ml-2" />
+            </button>
+            <button
+              onClick={leaveRoom}
+              className="px-3 py-2 bg-red-50 text-red-700 rounded-md hover:bg-red-100 transition-colors flex items-center text-sm font-medium"
+            >
+              Leave
+              <LogOut className="h-4 w-4 ml-2" />
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {videos.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {videos.map((videoItem) => (
-            <div key={videoItem.socketId} className="aspect-video relative">
-              <video
-                ref={(ref) => {
-                  if (ref && videoItem.stream) {
-                    ref.srcObject = videoItem.stream;
+      {/* Main Content */}
+      <div className="flex-1 p-4 md:p-6">
+        <div className="max-w-6xl mx-auto">
+          {/* Local Video */}
+          <div className="mb-6">
+            <div className="relative w-full max-w-md mx-auto overflow-hidden rounded-lg shadow-md border border-gray-200">
+              {video ? (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  muted
+                  className={`w-full h-80 bg-black ${
+                    isMirrored ? "scale-x-[-1]" : ""
+                  }`}
+                ></video>
+              ) : (
+                <div
+                  className={`w-full h-80 aspect-video bg-gray-800 flex flex-col items-center justify-center p-4 ${
+                    isMirrored ? "scale-x-[-1]" : ""
+                  }`}
+                >
+                  <div
+                    className={`w-24 h-24 rounded-full flex items-center justify-center mb-3 text-white text-4xl font-semibold uppercase shadow-lg ${
+                      isMirrored ? "scale-x-[-1]" : ""
+                    }`}
+                    style={{
+                      background: `linear-gradient(to bottom right, ${
+                        getAvatarColors(
+                          localStorage.getItem("username") ||
+                            socket?.id ||
+                            "default"
+                        ).from
+                      }, ${
+                        getAvatarColors(
+                          localStorage.getItem("username") ||
+                            socket?.id ||
+                            "default"
+                        ).to
+                      })`,
+                    }}
+                  >
+                    {localStorage.getItem("username")
+                      ? localStorage.getItem("username")?.charAt(0)
+                      : "U"}
+                  </div>
+                  <span
+                    className={`text-white text-lg font-medium ${
+                      isMirrored ? "scale-x-[-1]" : ""
+                    }`}
+                  >
+                    {localStorage.getItem("username") || "You"}
+                  </span>
+                  {!audio && (
+                    <div
+                      className={`mt-2 flex items-center ${
+                        isMirrored ? "scale-x-[-1]" : ""
+                      }`}
+                    ></div>
+                  )}
+                </div>
+              )}
+
+              {/* Video Controls */}
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center space-x-3">
+                <button
+                  onClick={toggleVideo}
+                  className={`p-2.5 rounded-full flex items-center justify-center ${
+                    video
+                      ? "bg-blue-500 text-white hover:bg-blue-600"
+                      : "bg-red-500 text-white hover:bg-red-600"
+                  } transition-colors shadow-lg`}
+                  title={video ? "Turn Off Video" : "Turn On Video"}
+                >
+                  {video ? (
+                    <Video className="h-5 w-5" />
+                  ) : (
+                    <VideoOff className="h-5 w-5" />
+                  )}
+                </button>
+                <button
+                  onClick={toggleAudio}
+                  className={`p-2.5 rounded-full flex items-center justify-center ${
+                    audio
+                      ? "bg-blue-500 text-white hover:bg-blue-600"
+                      : "bg-red-500 text-white hover:bg-red-600"
+                  } transition-colors shadow-lg`}
+                  title={audio ? "Mute Audio" : "Unmute Audio"}
+                >
+                  {audio ? (
+                    <Mic className="h-5 w-5" />
+                  ) : (
+                    <MicOff className="h-5 w-5" />
+                  )}
+                </button>
+                {screenShareAvailable && (
+                  <button
+                    onClick={toggleScreenShare}
+                    className={`p-2.5 rounded-full flex items-center justify-center ${
+                      isScreenSharing
+                        ? "bg-green-500 text-white hover:bg-green-600"
+                        : "bg-blue-500 text-white hover:bg-blue-600"
+                    } transition-colors shadow-lg`}
+                    title={
+                      isScreenSharing ? "Stop Sharing Screen" : "Share Screen"
+                    }
+                  >
+                    <MonitorSmartphone className="h-5 w-5" />
+                  </button>
+                )}
+                <button
+                  onClick={toggleMirror}
+                  className={`p-2.5 rounded-full flex items-center justify-center ${
+                    isMirrored
+                      ? "bg-purple-500 text-white hover:bg-purple-600"
+                      : "bg-gray-500 text-white hover:bg-gray-600"
+                  } transition-colors shadow-lg`}
+                  title={
+                    isMirrored ? "Disable Mirror View" : "Enable Mirror View"
                   }
-                }}
-                autoPlay
-                playsInline
-                className="w-full h-full border rounded"
-              />
-              <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-                Participant {videoItem.socketId.substring(0, 5)}
+                >
+                  <FlipHorizontal className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Status Indicators */}
+              <div className="absolute top-2 left-2 flex flex-col space-y-1">
+                {isScreenSharing && (
+                  <div className="bg-green-500 text-white px-2 py-1 rounded text-xs font-medium flex items-center">
+                    <MonitorSmartphone className="h-3 w-3 mr-1" />
+                    Sharing Screen
+                  </div>
+                )}
+              </div>
+
+              {isMirrored && video && !isScreenSharing && (
+                <div className="absolute top-2 right-2 bg-purple-500 text-white px-2 py-1 rounded text-xs font-medium flex items-center">
+                  <FlipHorizontal className="h-3 w-3 mr-1" />
+                  Mirrored
+                </div>
+              )}
+
+              {!videoAvailable && !audioAvailable && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 text-white">
+                  <div className="text-center px-4">
+                    <p className="mb-2 font-medium">
+                      Camera and microphone access denied
+                    </p>
+                    <p className="text-sm text-gray-300">
+                      Please check your browser permissions
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="absolute top-2 right-2 text-xs font-medium text-white bg-black bg-opacity-50 px-2 py-1 rounded">
+                You
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {videos.length === 0 && connectionStatus === "connected" && (
-        <div className="text-center p-8 bg-gray-100 rounded">
-          <p className="text-lg">Waiting for others to join the call...</p>
-          <p className="text-sm text-gray-500 mt-2">
-            Share the URL with others to invite them to this room
-          </p>
+          {/* Remote Participants */}
+          {videos.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {videos.map((videoItem, index) => (
+                <div
+                  key={`${videoItem.socketId}-${index}`}
+                  className="aspect-video relative rounded-lg overflow-hidden shadow-md border border-gray-200"
+                >
+                  {videoItem.isVideoOn !== false ? (
+                    <video
+                      ref={(ref) => {
+                        if (ref && videoItem.stream) {
+                          ref.srcObject = videoItem.stream;
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full bg-black object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-800 flex flex-col items-center justify-center p-4">
+                      <div
+                        className="w-24 h-24 rounded-full flex items-center justify-center mb-3 text-white text-4xl font-semibold uppercase shadow-lg"
+                        style={{
+                          background: `linear-gradient(to bottom right, ${
+                            getAvatarColors(
+                              videoItem.username || videoItem.socketId
+                            ).from
+                          }, ${
+                            getAvatarColors(
+                              videoItem.username || videoItem.socketId
+                            ).to
+                          })`,
+                        }}
+                      >
+                        {videoItem.username
+                          ? videoItem.username.charAt(0)
+                          : videoItem.socketId.substring(0, 1)}
+                      </div>
+                      <span className="text-white text-lg font-medium">
+                        {videoItem.username ||
+                          `User-${videoItem.socketId.substring(0, 5)}`}
+                      </span>
+                      <div className="mt-2 flex items-center space-x-2">
+                        {videoItem.isAudioOn === false ? (
+                          <span className="px-2 py-1 bg-red-500 text-white text-xs rounded-full flex items-center">
+                            <MicOff className="h-3 w-3 mr-1" />
+                            Muted
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-green-500 text-white text-xs rounded-full flex items-center">
+                            <Mic className="h-3 w-3 mr-1" />
+                            Unmuted
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Video and audio status indicators */}
+                  <div className="absolute top-2 right-2 flex space-x-1">
+                    {videoItem.isVideoOn === false && (
+                      <div className="bg-red-500 text-white p-1 rounded-full">
+                        <VideoOff className="h-3 w-3" />
+                      </div>
+                    )}
+                    {videoItem.isAudioOn === false &&
+                      videoItem.isVideoOn !== false && (
+                        <div className="bg-red-500 text-white p-1 rounded-full">
+                          <MicOff className="h-3 w-3" />
+                        </div>
+                      )}
+                  </div>
+
+                  <div className="absolute bottom-2 left-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm font-medium">
+                    {videoItem.username ||
+                      `User-${videoItem.socketId.substring(0, 5)}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : connectionStatus === "connected" ? (
+            <div className="text-center py-12 px-4 bg-white rounded-lg shadow-sm border border-gray-200">
+              <div className="max-w-md mx-auto">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Waiting for others to join
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  Share the link with others to invite them to this room
+                </p>
+                <button
+                  onClick={copyRoomLink}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors inline-flex items-center"
+                >
+                  {copySuccess ? "Copied!" : "Copy Room Link"}
+                  <ClipboardCopy className="h-4 w-4 ml-2" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 px-4 bg-white rounded-lg shadow-sm border border-gray-200">
+              <div className="max-w-md mx-auto">
+                <h3 className="text-lg font-medium text-yellow-800 mb-2">
+                  Connecting to the room...
+                </h3>
+                <p className="text-gray-500">
+                  Please wait while we establish the connection
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

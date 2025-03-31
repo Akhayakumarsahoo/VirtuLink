@@ -17,6 +17,10 @@ const connectToSocket = (server) => {
   const users = {};
   // Track time online
   const timeOnline = {};
+  // Track timeline events for each room
+  const roomTimelines = {};
+  // Track media status (video/audio) by user
+  const mediaStatus = {};
 
   io.on("connection", (socket) => {
     console.log(`User connected: ${socket.id}`);
@@ -43,6 +47,7 @@ const connectToSocket = (server) => {
         // Initialize room if it doesn't exist
         if (!connections[room]) {
           connections[room] = [];
+          roomTimelines[room] = [];
           console.log(`Created new room: ${room}`);
         }
 
@@ -57,14 +62,45 @@ const connectToSocket = (server) => {
           username: username || `User-${socket.id.substring(0, 5)}`,
         };
 
+        // Initialize media status for this user
+        mediaStatus[socket.id] = {
+          isVideoOn: true,
+          isAudioOn: true,
+        };
+
         // Track connection time
         timeOnline[socket.id] = new Date();
+
+        // Add join event to timeline
+        const joinEvent = {
+          type: "join",
+          userId: socket.id,
+          username: users[socket.id].username,
+          timestamp: new Date().toISOString(),
+        };
+        roomTimelines[room].push(joinEvent);
 
         // Join the socket room
         socket.join(room);
 
-        // Notify all users in the room about the new user
-        io.to(room).emit("user:joined", socket.id, connections[room]);
+        // Collect user data for all users in this room
+        const roomUsers = {};
+        connections[room].forEach((userId) => {
+          if (users[userId]) {
+            roomUsers[userId] = {
+              username: users[userId].username,
+            };
+          }
+        });
+
+        // Notify all users in the room about the new user, send user data
+        io.to(room).emit(
+          "user:joined",
+          socket.id,
+          connections[room],
+          roomUsers
+        );
+        io.to(room).emit("timeline:update", roomTimelines[room]);
 
         // Log active connections
         console.log(`Room ${room} connections:`, connections[room]);
@@ -73,6 +109,7 @@ const connectToSocket = (server) => {
         socket.emit("room:joined", {
           room,
           participants: connections[room].length,
+          users: roomUsers,
           success: true,
         });
       } catch (error) {
@@ -99,6 +136,43 @@ const connectToSocket = (server) => {
       }
     });
 
+    // Handle media status updates
+    socket.on("media:status", (data) => {
+      try {
+        const { room, isVideoOn, isAudioOn } = data;
+
+        if (!users[socket.id] || !users[socket.id].room) {
+          console.warn(
+            `User ${socket.id} tried to update media status without being in a room`
+          );
+          return;
+        }
+
+        const userRoom = users[socket.id].room;
+
+        // Update the media status for this user
+        mediaStatus[socket.id] = {
+          isVideoOn: isVideoOn,
+          isAudioOn: isAudioOn,
+        };
+
+        console.log(
+          `Media status update from ${socket.id}: video=${isVideoOn}, audio=${isAudioOn}`
+        );
+
+        // Broadcast the updated status to all users in the room
+        io.to(userRoom).emit(
+          "media:status-update",
+          socket.id,
+          users[socket.id].username,
+          isVideoOn,
+          isAudioOn
+        );
+      } catch (error) {
+        console.error("Error in media:status handler:", error);
+      }
+    });
+
     // Handle user disconnection
     socket.on("disconnect", () => {
       try {
@@ -115,12 +189,27 @@ const connectToSocket = (server) => {
               (id) => id !== socket.id
             );
 
-            // Notify remaining users about the disconnection
+            // Calculate time online
+            const timeConnected = new Date() - timeOnline[socket.id];
+
+            // Add leave event to timeline
+            const leaveEvent = {
+              type: "leave",
+              userId: socket.id,
+              username: user.username,
+              timestamp: new Date().toISOString(),
+              duration: timeConnected / 1000, // Convert to seconds
+            };
+            roomTimelines[room].push(leaveEvent);
+
+            // Notify remaining users about the disconnection and timeline update
             io.to(room).emit("user:left", socket.id);
+            io.to(room).emit("timeline:update", roomTimelines[room]);
 
             // Clean up empty rooms
             if (connections[room].length === 0) {
               delete connections[room];
+              delete roomTimelines[room];
               console.log(`Room ${room} is now empty and has been removed`);
             } else {
               console.log(
@@ -141,6 +230,7 @@ const connectToSocket = (server) => {
           // Clean up user data
           delete users[socket.id];
           delete timeOnline[socket.id];
+          delete mediaStatus[socket.id];
         }
       } catch (error) {
         console.error("Error in disconnect handler:", error);
@@ -160,8 +250,22 @@ const connectToSocket = (server) => {
               (id) => id !== socket.id
             );
 
-            // Notify remaining users about the disconnection
+            // Calculate time online
+            const timeConnected = new Date() - timeOnline[socket.id];
+
+            // Add leave event to timeline
+            const leaveEvent = {
+              type: "leave",
+              userId: socket.id,
+              username: user.username,
+              timestamp: new Date().toISOString(),
+              duration: timeConnected / 1000, // Convert to seconds
+            };
+            roomTimelines[room].push(leaveEvent);
+
+            // Notify remaining users about the disconnection and timeline update
             io.to(room).emit("user:left", socket.id);
+            io.to(room).emit("timeline:update", roomTimelines[room]);
 
             // Leave the socket room
             socket.leave(room);
@@ -171,12 +275,15 @@ const connectToSocket = (server) => {
             // Clean up empty rooms
             if (connections[room].length === 0) {
               delete connections[room];
+              delete roomTimelines[room];
               console.log(`Room ${room} is now empty and has been removed`);
             }
           }
 
           // Clean up user data
           delete users[socket.id];
+          delete timeOnline[socket.id];
+          delete mediaStatus[socket.id];
         }
       } catch (error) {
         console.error("Error in leave:room handler:", error);
