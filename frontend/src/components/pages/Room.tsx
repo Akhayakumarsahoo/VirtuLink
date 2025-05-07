@@ -633,8 +633,8 @@ function Room() {
       if ((video && videoAvailable) || (audio && audioAvailable)) {
         navigator.mediaDevices
           .getUserMedia({
-            video: video ? true : false,
-            audio: audio ? true : false,
+            video: video,
+            audio: audio,
           })
           .then(getUserMedia)
           .catch((error) => {

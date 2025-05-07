@@ -23,7 +23,10 @@ interface AuthContextValue {
 }
 
 const client = axios.create({
-  baseURL: "http://localhost:8000/api/users",
+  baseURL:
+    import.meta.env.MODE === "development"
+      ? "http://localhost:8000/api/users"
+      : "https://virtulink.onrender.com/api/users",
 });
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
