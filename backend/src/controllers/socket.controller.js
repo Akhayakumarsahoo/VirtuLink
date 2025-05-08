@@ -3,24 +3,25 @@ import { Server } from "socket.io";
 const connectToSocket = (server) => {
   const allowedOrigins = [
     "http://localhost:5173",
-    "https://virtulink.vercel.app",
-    process.env.CLIENT_URL,
-  ].filter(Boolean);
+    "https://virtu-link.vercel.app",
+    "https://virtulink.onrender.com",
+  ];
 
   const io = new Server(server, {
     cors: {
       origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-          return callback(new Error("Not allowed by CORS"), false);
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
         }
-        return callback(null, true);
       },
       methods: ["GET", "POST", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
       credentials: true,
     },
-    pingTimeout: 60000, // Increase ping timeout to prevent disconnections
+    pingTimeout: 60000,
+    transports: ["websocket", "polling"],
   });
 
   // Store active connections by room
