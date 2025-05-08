@@ -76,7 +76,14 @@ const HomeComponent = () => {
   };
 
   return (
-    <div className="h-screen w-screen bg-gray-900">
+    <div
+      className="h-screen w-screen bg-gray-900"
+      style={{
+        background: "url(background.png)",
+        backgroundSize: "cover",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
       <nav className="flex justify-between items-center p-5 bg-gray-800">
         <div className="Logo">
           <h1 className="text-white text-4xl font-medium">VirtuLink</h1>
@@ -88,10 +95,7 @@ const HomeComponent = () => {
       </nav>
       <Container maxWidth="lg">
         <Box sx={{ my: 4, textAlign: "center" }}>
-          <Typography variant="h3" component="h1" gutterBottom>
-            Virtulink
-          </Typography>
-          <Typography variant="h5" color="text.secondary" paragraph>
+          <Typography variant="h5" className="text-slate-300 ">
             High-quality video calls for everyone
           </Typography>
         </Box>

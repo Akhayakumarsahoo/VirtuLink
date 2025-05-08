@@ -4,6 +4,7 @@ import React, {
   useContext,
   ReactNode,
   useEffect,
+  useState,
 } from "react";
 import { io, Socket } from "socket.io-client";
 
@@ -21,51 +22,52 @@ interface SocketProviderProps {
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = (props) => {
-  console.log("Initializing SocketProvider");
+  const [isConnected, setIsConnected] = useState(false);
 
   const socket = useMemo(() => {
-    console.log("Creating socket connection to http://localhost:8000");
     return io(
       import.meta.env.MODE === "development"
         ? "http://localhost:8000"
         : "https://virtulink.onrender.com",
       {
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        autoConnect: true,
+        reconnection: false,
+        autoConnect: false,
         timeout: 10000,
       }
     );
   }, []);
 
   useEffect(() => {
-    socket.on("connect", () => {
-      console.log("Socket connected successfully with ID:", socket.id);
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Socket disconnected");
-    });
-
-    socket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error);
-    });
-
-    // Force a connection attempt if not already connected
-    if (!socket.connected) {
-      console.log("Socket not connected, attempting to connect...");
+    if (!socket.connected && !isConnected) {
       socket.connect();
-    } else {
-      console.log("Socket already connected with ID:", socket.id);
     }
 
-    return () => {
-      console.log("Cleaning up socket event listeners");
-      socket.off("connect");
-      socket.off("disconnect");
-      socket.off("connect_error");
+    const onConnect = () => {
+      setIsConnected(true);
     };
-  }, [socket]);
+
+    const onDisconnect = () => {
+      setIsConnected(false);
+    };
+
+    const onConnectError = (error: Error) => {
+      console.error("Socket connection error:", error);
+      setIsConnected(false);
+    };
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
+
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      if (socket.connected) {
+        socket.disconnect();
+      }
+    };
+  }, [socket, isConnected]);
 
   return (
     <SocketContext.Provider value={socket}>

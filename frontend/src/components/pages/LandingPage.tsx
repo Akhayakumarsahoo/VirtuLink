@@ -35,7 +35,7 @@ const LandingPage = () => {
               <>
                 <button
                   className="hover:cursor-pointer"
-                  onClick={() => router("/auth")}
+                  onClick={() => router("/home")}
                 >
                   Join as Guest
                 </button>

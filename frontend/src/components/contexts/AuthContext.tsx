@@ -31,7 +31,10 @@ interface AuthContextValue {
   loading: boolean;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL =
+  import.meta.env.MODE === "development"
+    ? "http://localhost:8000"
+    : "https://virtulink.onrender.com";
 
 const client = axios.create({
   baseURL: `${API_URL}/api/users`,
@@ -45,11 +48,6 @@ const client = axios.create({
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized access
-      localStorage.removeItem("userName");
-      window.location.href = "/auth";
-    }
     return Promise.reject(error);
   }
 );

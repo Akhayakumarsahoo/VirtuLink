@@ -784,7 +784,7 @@ function Room() {
     setVideos([]);
 
     // Navigate to home page
-    navigate("/");
+    navigate("/home");
   };
 
   const copyRoomLink = () => {
