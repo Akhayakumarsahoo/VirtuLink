@@ -1,11 +1,23 @@
 import { Server } from "socket.io";
 
 const connectToSocket = (server) => {
+  const allowedOrigins = [
+    "http://localhost:5173",
+    "https://virtulink.vercel.app",
+    process.env.CLIENT_URL,
+  ].filter(Boolean);
+
   const io = new Server(server, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-      allowedHeaders: ["*"],
+      origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+          return callback(new Error("Not allowed by CORS"), false);
+        }
+        return callback(null, true);
+      },
+      methods: ["GET", "POST", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
       credentials: true,
     },
     pingTimeout: 60000, // Increase ping timeout to prevent disconnections
@@ -113,11 +125,8 @@ const connectToSocket = (server) => {
           success: true,
         });
       } catch (error) {
-        console.error("Error in join:room handler:", error);
-        socket.emit("error", {
-          message: "Failed to join room",
-          details: error.message,
-        });
+        console.error("Error in join:room:", error);
+        socket.emit("error", { message: "Failed to join room" });
       }
     });
 

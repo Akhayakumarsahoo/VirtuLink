@@ -31,13 +31,28 @@ interface AuthContextValue {
   loading: boolean;
 }
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 const client = axios.create({
-  baseURL:
-    import.meta.env.MODE === "development"
-      ? "http://localhost:8000/api/users"
-      : "https://virtulink.onrender.com/api/users",
+  baseURL: `${API_URL}/api/users`,
   withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
+
+// Add response interceptor for better error handling
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized access
+      localStorage.removeItem("userName");
+      window.location.href = "/auth";
+    }
+    return Promise.reject(error);
+  }
+);
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
