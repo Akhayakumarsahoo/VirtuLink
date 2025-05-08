@@ -24,13 +24,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = (props) => {
   console.log("Initializing SocketProvider");
 
   const socket = useMemo(() => {
-    console.log("Creating socket connection to http://localhost:9000");
-    return io("http://localhost:9000", {
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      autoConnect: true,
-      timeout: 10000,
-    });
+    console.log("Creating socket connection to http://localhost:8000");
+    return io(
+      import.meta.env.MODE === "development"
+        ? "http://localhost:8000"
+        : "https://virtulink.onrender.com",
+      {
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        autoConnect: true,
+        timeout: 10000,
+      }
+    );
   }, []);
 
   useEffect(() => {
