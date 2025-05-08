@@ -18,10 +18,11 @@ app.use(express.static("public"));
 app.use(cookieParser());
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === "production"
-        ? process.env.CLIENT_URL
-        : "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://virtu-link.vercel.app",
+      "https://virtulink.onrender.com",
+    ],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
