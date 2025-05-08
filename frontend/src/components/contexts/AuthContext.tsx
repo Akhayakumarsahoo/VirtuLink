@@ -1,25 +1,34 @@
 import axios from "axios";
-import { createContext, ReactNode, useContext, useState } from "react";
-
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useState,
+  useEffect,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 interface AuthContextType {
   name: string;
   email: string;
-  password: string;
+  isAuthenticated: boolean;
 }
+
 interface AuthProviderProps {
   children: ReactNode;
 }
+
 interface AuthContextValue {
-  userData: AuthContextType | undefined;
-  setUserData: (userData: AuthContextType | undefined) => void;
+  userData: AuthContextType | null;
+  setUserData: (userData: AuthContextType | null) => void;
   handleRegister: (
     name: string,
     email: string,
     password: string
   ) => Promise<void>;
   handleLogin: (email: string, password: string) => Promise<void>;
+  handleLogout: () => void;
+  loading: boolean;
 }
 
 const client = axios.create({
@@ -27,60 +36,122 @@ const client = axios.create({
     import.meta.env.MODE === "development"
       ? "http://localhost:8000/api/users"
       : "https://virtulink.onrender.com/api/users",
+  withCredentials: true,
 });
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const useAuth = () => {
   const auth = useContext(AuthContext);
+  if (!auth) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
   return auth;
 };
 
 function AuthProvider({ children }: AuthProviderProps) {
-  const [userData, setUserData] = useState<AuthContextType>();
+  const [userData, setUserData] = useState<AuthContextType | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await client.get("/me");
+        if (response.data.user) {
+          const userData = {
+            name: response.data.user.name,
+            email: response.data.user.email,
+            isAuthenticated: true,
+          };
+          setUserData(userData);
+          localStorage.setItem("userName", response.data.user.name);
+        }
+      } catch (error) {
+        setUserData(null);
+        localStorage.removeItem("userName");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   const handleRegister = async (
     name: string,
     email: string,
     password: string
   ) => {
-    // Register the user
-    setUserData({ name, email, password });
-
     try {
-      const request = await client.post("/register", {
+      const response = await client.post("/register", {
         name,
         email,
         password,
       });
-      if (request.status === 201) {
-        console.log("User registered successfully");
+
+      if (response.data.user) {
+        const userData = {
+          name: response.data.user.name,
+          email: response.data.user.email,
+          isAuthenticated: true,
+        };
+        setUserData(userData);
+        localStorage.setItem("userName", response.data.user.name);
+        navigate("/home");
       }
-      navigate("/home");
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Registration failed");
     }
   };
 
   const handleLogin = async (email: string, password: string) => {
     try {
-      const request = await client.post("/login", {
+      const response = await client.post("/login", {
         email,
         password,
       });
-      if (request.status === 200) {
-        console.log("User logged in successfully");
+
+      if (response.data.user) {
+        const userData = {
+          name: response.data.user.name,
+          email: response.data.user.email,
+          isAuthenticated: true,
+        };
+        setUserData(userData);
+        localStorage.setItem("userName", response.data.user.name);
+        navigate("/home");
       }
-      navigate("/home");
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Login failed");
     }
   };
 
-  const contextValue = { userData, setUserData, handleRegister, handleLogin };
+  const handleLogout = async () => {
+    try {
+      await client.post("/logout");
+      setUserData(null);
+      localStorage.removeItem("userName");
+      navigate("/");
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  const contextValue = {
+    userData,
+    setUserData,
+    handleRegister,
+    handleLogin,
+    handleLogout,
+    loading,
+  };
+
   return (
-    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>
+      {!loading && children}
+    </AuthContext.Provider>
   );
 }
 

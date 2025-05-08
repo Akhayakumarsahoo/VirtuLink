@@ -11,6 +11,8 @@ import {
   Snackbar,
   Alert,
 } from "@mui/material";
+import { useAuth } from "../contexts/AuthContext";
+import UserAvatar from "../common/UserAvatar";
 
 const generateRandomRoomId = () => {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -22,10 +24,11 @@ const HomeComponent = () => {
   const [username, setUsername] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [showError, setShowError] = useState<boolean>(false);
+  const { userData } = useAuth();
 
   useEffect(() => {
     // Load username from localStorage if available
-    const savedUsername = localStorage.getItem("username");
+    const savedUsername = localStorage.getItem("userName");
     if (savedUsername) {
       setUsername(savedUsername);
     }
@@ -39,7 +42,7 @@ const HomeComponent = () => {
     }
 
     // Save username to localStorage
-    localStorage.setItem("username", username);
+    localStorage.setItem("userName", username);
 
     // Generate a random room ID
     const newRoomId = generateRandomRoomId();
@@ -62,10 +65,7 @@ const HomeComponent = () => {
     }
 
     // Save username to localStorage
-    localStorage.setItem("username", username);
-
-    // Log before navigation
-    console.log(`Joining room with ID: ${roomId}`);
+    localStorage.setItem("userName", username);
 
     // Navigate to the room
     navigate(`/room/${roomId}`);
@@ -76,133 +76,144 @@ const HomeComponent = () => {
   };
 
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ my: 4, textAlign: "center" }}>
-        <Typography variant="h3" component="h1" gutterBottom>
-          Virtulink
-        </Typography>
-        <Typography variant="h5" color="text.secondary" paragraph>
-          High-quality video calls for everyone
-        </Typography>
-      </Box>
+    <div className="h-screen w-screen bg-gray-900">
+      <nav className="flex justify-between items-center p-5 bg-gray-800">
+        <div className="Logo">
+          <h1 className="text-white text-4xl font-medium">VirtuLink</h1>
+        </div>
+        <div className="flex items-center space-x-4">
+          <span className="text-white text-lg">Welcome, {userData?.name}</span>
+          <UserAvatar name={userData?.name || ""} />
+        </div>
+      </nav>
+      <Container maxWidth="lg">
+        <Box sx={{ my: 4, textAlign: "center" }}>
+          <Typography variant="h3" component="h1" gutterBottom>
+            Virtulink
+          </Typography>
+          <Typography variant="h5" color="text.secondary" paragraph>
+            High-quality video calls for everyone
+          </Typography>
+        </Box>
 
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: { xs: "column", md: "row" },
-          gap: 4,
-        }}
-      >
-        <Paper
-          elevation={3}
+        <Box
           sx={{
-            flex: 1,
-            p: 4,
             display: "flex",
-            flexDirection: "column",
-            gap: 2,
+            flexDirection: { xs: "column", md: "row" },
+            gap: 4,
           }}
         >
-          <Typography variant="h5" component="h2" gutterBottom>
-            Join a Meeting
-          </Typography>
-
-          <TextField
-            fullWidth
-            label="Your Name"
-            variant="outlined"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            margin="normal"
-          />
-
-          <TextField
-            fullWidth
-            label="Room Code"
-            variant="outlined"
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
-            margin="normal"
-          />
-
-          <Button
-            variant="contained"
-            color="primary"
-            size="large"
-            fullWidth
-            onClick={handleJoinRoom}
+          <Paper
+            elevation={3}
+            sx={{
+              flex: 1,
+              p: 4,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
           >
-            Join Room
-          </Button>
-        </Paper>
+            <Typography variant="h5" component="h2" gutterBottom>
+              Join a Meeting
+            </Typography>
 
-        <Divider
-          orientation="vertical"
-          flexItem
-          sx={{ display: { xs: "none", md: "block" } }}
-        />
-        <Divider sx={{ display: { xs: "block", md: "none" } }} />
+            <TextField
+              fullWidth
+              label="Your Name"
+              variant="outlined"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              margin="normal"
+            />
 
-        <Paper
-          elevation={3}
-          sx={{
-            flex: 1,
-            p: 4,
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-          }}
-        >
-          <Typography variant="h5" component="h2" gutterBottom>
-            Start a New Meeting
-          </Typography>
+            <TextField
+              fullWidth
+              label="Room Code"
+              variant="outlined"
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              margin="normal"
+            />
 
-          <TextField
-            fullWidth
-            label="Your Name"
-            variant="outlined"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            margin="normal"
+            <Button
+              variant="contained"
+              color="primary"
+              size="large"
+              fullWidth
+              onClick={handleJoinRoom}
+            >
+              Join Room
+            </Button>
+          </Paper>
+
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ display: { xs: "none", md: "block" } }}
           />
+          <Divider sx={{ display: { xs: "block", md: "none" } }} />
 
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Create a new room and share the code with others to join.
-          </Typography>
-
-          <Button
-            variant="contained"
-            color="secondary"
-            size="large"
-            fullWidth
-            onClick={handleCreateRoom}
+          <Paper
+            elevation={3}
+            sx={{
+              flex: 1,
+              p: 4,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
           >
-            Create New Room
-          </Button>
-        </Paper>
-      </Box>
+            <Typography variant="h5" component="h2" gutterBottom>
+              Start a New Meeting
+            </Typography>
 
-      <Box sx={{ mt: 6, textAlign: "center" }}>
-        <Typography variant="body2" color="text.secondary">
-          By using Virtulink, you agree to our Terms of Service and Privacy
-          Policy.
-        </Typography>
-      </Box>
+            <TextField
+              fullWidth
+              label="Your Name"
+              variant="outlined"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              margin="normal"
+            />
 
-      <Snackbar
-        open={showError}
-        autoHideDuration={6000}
-        onClose={handleCloseError}
-      >
-        <Alert
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Create a new room and share the code with others to join.
+            </Typography>
+
+            <Button
+              variant="contained"
+              color="secondary"
+              size="large"
+              fullWidth
+              onClick={handleCreateRoom}
+            >
+              Create New Room
+            </Button>
+          </Paper>
+        </Box>
+
+        <Box sx={{ mt: 6, textAlign: "center" }}>
+          <Typography variant="body2" color="text.secondary">
+            By using Virtulink, you agree to our Terms of Service and Privacy
+            Policy.
+          </Typography>
+        </Box>
+
+        <Snackbar
+          open={showError}
+          autoHideDuration={6000}
           onClose={handleCloseError}
-          severity="error"
-          sx={{ width: "100%" }}
         >
-          {error}
-        </Alert>
-      </Snackbar>
-    </Container>
+          <Alert
+            onClose={handleCloseError}
+            severity="error"
+            sx={{ width: "100%" }}
+          >
+            {error}
+          </Alert>
+        </Snackbar>
+      </Container>
+    </div>
   );
 };
 

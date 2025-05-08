@@ -8,7 +8,7 @@ import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
-import { Snackbar } from "@mui/material";
+import { Snackbar, CircularProgress } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
 
 // TODO remove, this demo shouldn't need to reset the theme.
@@ -22,6 +22,7 @@ export default function Authentication() {
   const [message, setMessage] = React.useState<string>("");
   const [formState, setFormState] = React.useState<number>(0); // 0 for login, 1 for register
   const [open, setOpen] = React.useState<boolean>(false);
+  const [loading, setLoading] = React.useState<boolean>(false);
 
   const authContext = useAuth();
 
@@ -33,26 +34,25 @@ export default function Authentication() {
 
   const handleAuth = async () => {
     try {
+      setLoading(true);
+      setError("");
+
       if (formState === 0) {
         // Login
         await handleLogin(email, password);
-        console.log("email", email);
-        console.log("password", password);
       } else if (formState === 1) {
         // Register
         await handleRegister(name, email, password);
-        console.log("name", name);
-        setEmail("");
         setMessage("Registration successful");
         setOpen(true);
-        setError("");
         setFormState(0); // Switch back to login form after successful registration
+        setEmail("");
         setPassword("");
       }
     } catch (err: any) {
-      console.log(err);
-      const message = err.response?.data?.message || "An error occurred";
-      setError(message);
+      setError(err.message || "An error occurred");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -94,12 +94,14 @@ export default function Authentication() {
               <Button
                 variant={formState === 0 ? "contained" : "outlined"}
                 onClick={() => setFormState(0)}
+                disabled={loading}
               >
                 Sign In
               </Button>
               <Button
                 variant={formState === 1 ? "contained" : "outlined"}
                 onClick={() => setFormState(1)}
+                disabled={loading}
               >
                 Sign Up
               </Button>
@@ -117,6 +119,7 @@ export default function Authentication() {
                   value={name}
                   autoFocus
                   onChange={(e) => setName(e.target.value)}
+                  disabled={loading}
                 />
               )}
 
@@ -125,11 +128,12 @@ export default function Authentication() {
                 required
                 fullWidth
                 id="email"
-                label="email"
+                label="Email Address"
                 name="email"
                 value={email}
                 autoFocus
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
               />
               <TextField
                 margin="normal"
@@ -141,9 +145,14 @@ export default function Authentication() {
                 type="password"
                 onChange={(e) => setPassword(e.target.value)}
                 id="password"
+                disabled={loading}
               />
 
-              {error && <p style={{ color: "red" }}>{error}</p>}
+              {error && (
+                <Box sx={{ color: "error.main", mt: 2, textAlign: "center" }}>
+                  {error}
+                </Box>
+              )}
 
               <Button
                 type="button"
@@ -151,8 +160,15 @@ export default function Authentication() {
                 variant="contained"
                 sx={{ mt: 3, mb: 2 }}
                 onClick={handleAuth}
+                disabled={loading}
               >
-                {formState === 0 ? "Login" : "Register"}
+                {loading ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : formState === 0 ? (
+                  "Login"
+                ) : (
+                  "Register"
+                )}
               </Button>
             </Box>
           </Box>
