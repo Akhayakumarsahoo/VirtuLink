@@ -2,9 +2,9 @@ import { Server } from "socket.io";
 
 const connectToSocket = (server) => {
   const allowedOrigins = [
-    "http://localhost:5173",
-    "https://virtu-link.vercel.app",
-    "https://virtulink.onrender.com",
+    process.env.NODE_ENV === "development"
+      ? "http://localhost:5173"
+      : "https://virtu-link.vercel.app",
   ];
 
   const io = new Server(server, {
