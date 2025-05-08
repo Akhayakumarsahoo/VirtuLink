@@ -4,7 +4,7 @@ import UserAvatar from "../common/UserAvatar";
 
 const LandingPage = () => {
   const router = useNavigate();
-  const { userData, handleLogout } = useAuth();
+  const { userData } = useAuth();
 
   return (
     <>
