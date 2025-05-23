@@ -31,11 +31,6 @@ interface AuthContextValue {
   loading: boolean;
 }
 
-const API_URL =
-  import.meta.env.MODE === "development"
-    ? "http://localhost:9000"
-    : import.meta.env.VITE_API_URL;
-
 const client = axios.create({
   baseURL: `${API_URL}/api/users`,
   withCredentials: true,
