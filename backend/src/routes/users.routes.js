@@ -4,7 +4,7 @@ import {
   logout,
   getMe,
 } from "../controllers/users.controller.js";
-import { protect } from "../middleware/auth.middleware.js";
+import { verifyCookie } from "../middleware/auth.middleware.js";
 import { Router } from "express";
 
 const router = Router();
@@ -15,6 +15,6 @@ router.post("/login", login);
 router.post("/logout", logout);
 
 // Protected routes
-router.get("/me", protect, getMe);
+router.get("/me", verifyCookie, getMe);
 
 export default router;

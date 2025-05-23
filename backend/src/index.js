@@ -18,11 +18,7 @@ app.use(express.static("public"));
 app.use(cookieParser());
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === "production"
-        ? process.env.CLIENT_URL
-        : "http://localhost:5173",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: process.env.VITE_FRONTEND_URL || "http://localhost:5173",
     credentials: true,
   })
 );
@@ -30,25 +26,21 @@ app.use(
 // Routes
 app.use("/api/users", userRouter);
 
-// Initialize Socket.IO with the HTTP server
+// Initialize Socket.IO
 connectToSocket(server);
 
 const { PORT = 9000, MONGODB_URI } = process.env;
 
 // Connect to MongoDB and start the server
-(async () => {
-  try {
-    await mongoose
-      .connect(MONGODB_URI)
-      .then(() => console.log("MongoDB connected"));
-
-    // Use the HTTP server to listen, not the Express app
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => {
+    console.log("MongoDB connected");
     server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Socket.IO server is running on the same port`);
+      console.log(`Server running on port ${PORT}`);
     });
-  } catch (error) {
-    console.log("MongoDB connection failed", error);
-    throw error;
-  }
-})();
+  })
+  .catch((error) => {
+    console.error("MongoDB connection failed:", error);
+    process.exit(1);
+  });

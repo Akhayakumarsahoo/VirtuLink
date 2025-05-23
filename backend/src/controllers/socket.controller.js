@@ -3,52 +3,41 @@ import { Server } from "socket.io";
 const connectToSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-      allowedHeaders: ["*"],
+      origin: process.env.VITE_FRONTEND_URL || "http://localhost:5173",
       credentials: true,
     },
-    pingTimeout: 60000, // Increase ping timeout to prevent disconnections
   });
 
-  // Store active connections by room
+  // Store active connections and user information
   const connections = {};
-  // Store user information
   const users = {};
-  // Track time online
-  const timeOnline = {};
-  // Track timeline events for each room
-  const roomTimelines = {};
-  // Track media status (video/audio) by user
   const mediaStatus = {};
 
   io.on("connection", (socket) => {
     console.log(`User connected: ${socket.id}`);
 
-    // Handle room joining
-    socket.on("join:room", (data) => {
+    socket.on("join:room", ({ room, username = "User", offer }) => {
       try {
-        const { room, username } = data;
-
         if (!room) {
-          console.error(
-            `User ${socket.id} tried to join a room without providing a room ID`
-          );
           socket.emit("error", { message: "Room ID is required" });
           return;
         }
 
-        console.log(
-          `User ${socket.id} joining room: ${room} as ${
-            username || "Anonymous"
-          }`
-        );
+        // Leave any existing room first
+        if (users[socket.id]?.room) {
+          const oldRoom = users[socket.id].room;
+          socket.leave(oldRoom);
+          connections[oldRoom] = connections[oldRoom].filter(
+            (id) => id !== socket.id
+          );
+          if (connections[oldRoom].length === 0) {
+            delete connections[oldRoom];
+          }
+        }
 
         // Initialize room if it doesn't exist
         if (!connections[room]) {
           connections[room] = [];
-          roomTimelines[room] = [];
-          console.log(`Created new room: ${room}`);
         }
 
         // Add user to room if not already in it
@@ -60,25 +49,16 @@ const connectToSocket = (server) => {
         users[socket.id] = {
           room,
           username: username || `User-${socket.id.substring(0, 5)}`,
+          offer,
         };
 
-        // Initialize media status for this user
+        // Initialize media status based on the offer
+        const hasVideo = offer?.sdp?.includes("m=video");
+        const hasAudio = offer?.sdp?.includes("m=audio");
         mediaStatus[socket.id] = {
-          isVideoOn: true,
-          isAudioOn: true,
+          isVideoOn: hasVideo,
+          isAudioOn: hasAudio,
         };
-
-        // Track connection time
-        timeOnline[socket.id] = new Date();
-
-        // Add join event to timeline
-        const joinEvent = {
-          type: "join",
-          userId: socket.id,
-          username: users[socket.id].username,
-          timestamp: new Date().toISOString(),
-        };
-        roomTimelines[room].push(joinEvent);
 
         // Join the socket room
         socket.join(room);
@@ -93,46 +73,35 @@ const connectToSocket = (server) => {
           }
         });
 
-        // Notify all users in the room about the new user, send user data
+        // Notify all users in the room about the new user
         io.to(room).emit(
           "user:joined",
           socket.id,
           connections[room],
           roomUsers
         );
-        io.to(room).emit("timeline:update", roomTimelines[room]);
-
-        // Log active connections
-        console.log(`Room ${room} connections:`, connections[room]);
-
-        // Confirm to the user that they've joined the room
-        socket.emit("room:joined", {
-          room,
-          participants: connections[room].length,
-          users: roomUsers,
-          success: true,
-        });
       } catch (error) {
-        console.error("Error in join:room handler:", error);
-        socket.emit("error", {
-          message: "Failed to join room",
-          details: error.message,
-        });
+        console.error("Error in join:room:", error);
+        socket.emit("error", { message: "Failed to join room" });
       }
     });
 
     // Handle WebRTC signaling
     socket.on("signal", (toId, message) => {
       try {
-        // Forward the signal to the specified user
-        if (toId && io.sockets.sockets.get(toId)) {
-          console.log(`Signal from ${socket.id} to ${toId}`);
-          io.to(toId).emit("signal", socket.id, message);
-        } else {
-          console.warn(`Cannot forward signal to ${toId} - user not found`);
+        if (!toId || typeof toId !== "string") {
+          return socket.emit("error", { message: "Invalid target ID" });
         }
+
+        const targetSocket = io.sockets.sockets.get(toId);
+        if (!targetSocket) {
+          return socket.emit("error", { message: "Target user not found" });
+        }
+
+        io.to(toId).emit("signal", socket.id, message);
       } catch (error) {
         console.error("Error in signal handler:", error);
+        socket.emit("error", { message: "Failed to forward signal" });
       }
     });
 
@@ -141,27 +110,11 @@ const connectToSocket = (server) => {
       try {
         const { room, isVideoOn, isAudioOn } = data;
 
-        if (!users[socket.id] || !users[socket.id].room) {
-          console.warn(
-            `User ${socket.id} tried to update media status without being in a room`
-          );
-          return;
-        }
+        if (!users[socket.id]?.room) return;
 
-        const userRoom = users[socket.id].room;
+        mediaStatus[socket.id] = { isVideoOn, isAudioOn };
 
-        // Update the media status for this user
-        mediaStatus[socket.id] = {
-          isVideoOn: isVideoOn,
-          isAudioOn: isAudioOn,
-        };
-
-        console.log(
-          `Media status update from ${socket.id}: video=${isVideoOn}, audio=${isAudioOn}`
-        );
-
-        // Broadcast the updated status to all users in the room
-        io.to(userRoom).emit(
+        io.to(room).emit(
           "media:status-update",
           socket.id,
           users[socket.id].username,
@@ -175,155 +128,41 @@ const connectToSocket = (server) => {
 
     // Handle user disconnection
     socket.on("disconnect", () => {
-      try {
-        console.log(`User disconnected: ${socket.id}`);
+      const user = users[socket.id];
+      if (user?.room) {
+        // Remove user from room connections
+        connections[user.room] = connections[user.room].filter(
+          (id) => id !== socket.id
+        );
 
-        // Get user's room
-        const user = users[socket.id];
-        if (user) {
-          const { room } = user;
+        // Notify other users
+        io.to(user.room).emit("user:left", socket.id);
 
-          // Remove user from room connections
-          if (connections[room]) {
-            connections[room] = connections[room].filter(
-              (id) => id !== socket.id
-            );
+        // Clean up user data
+        delete users[socket.id];
+        delete mediaStatus[socket.id];
 
-            // Calculate time online
-            const timeConnected = new Date() - timeOnline[socket.id];
-
-            // Add leave event to timeline
-            const leaveEvent = {
-              type: "leave",
-              userId: socket.id,
-              username: user.username,
-              timestamp: new Date().toISOString(),
-              duration: timeConnected / 1000, // Convert to seconds
-            };
-            roomTimelines[room].push(leaveEvent);
-
-            // Notify remaining users about the disconnection and timeline update
-            io.to(room).emit("user:left", socket.id);
-            io.to(room).emit("timeline:update", roomTimelines[room]);
-
-            // Clean up empty rooms
-            if (connections[room].length === 0) {
-              delete connections[room];
-              delete roomTimelines[room];
-              console.log(`Room ${room} is now empty and has been removed`);
-            } else {
-              console.log(
-                `Room ${room} connections after disconnect:`,
-                connections[room]
-              );
-            }
-          }
-
-          // Calculate time online
-          const timeConnected = new Date() - timeOnline[socket.id];
-          console.log(
-            `User ${socket.id} was connected for ${
-              timeConnected / 1000
-            } seconds`
-          );
-
-          // Clean up user data
-          delete users[socket.id];
-          delete timeOnline[socket.id];
-          delete mediaStatus[socket.id];
+        // Remove room if empty
+        if (connections[user.room].length === 0) {
+          delete connections[user.room];
         }
-      } catch (error) {
-        console.error("Error in disconnect handler:", error);
       }
     });
 
-    // Handle explicit leave room request
+    // Handle room leaving
     socket.on("leave:room", () => {
-      try {
-        const user = users[socket.id];
-        if (user) {
-          const { room } = user;
-
-          // Remove user from room connections
-          if (connections[room]) {
-            connections[room] = connections[room].filter(
-              (id) => id !== socket.id
-            );
-
-            // Calculate time online
-            const timeConnected = new Date() - timeOnline[socket.id];
-
-            // Add leave event to timeline
-            const leaveEvent = {
-              type: "leave",
-              userId: socket.id,
-              username: user.username,
-              timestamp: new Date().toISOString(),
-              duration: timeConnected / 1000, // Convert to seconds
-            };
-            roomTimelines[room].push(leaveEvent);
-
-            // Notify remaining users about the disconnection and timeline update
-            io.to(room).emit("user:left", socket.id);
-            io.to(room).emit("timeline:update", roomTimelines[room]);
-
-            // Leave the socket room
-            socket.leave(room);
-
-            console.log(`User ${socket.id} left room ${room}`);
-
-            // Clean up empty rooms
-            if (connections[room].length === 0) {
-              delete connections[room];
-              delete roomTimelines[room];
-              console.log(`Room ${room} is now empty and has been removed`);
-            }
-          }
-
-          // Clean up user data
-          delete users[socket.id];
-          delete timeOnline[socket.id];
-          delete mediaStatus[socket.id];
-        }
-      } catch (error) {
-        console.error("Error in leave:room handler:", error);
+      const user = users[socket.id];
+      if (user?.room) {
+        socket.leave(user.room);
+        connections[user.room] = connections[user.room].filter(
+          (id) => id !== socket.id
+        );
+        io.to(user.room).emit("user:left", socket.id);
+        delete users[socket.id];
+        delete mediaStatus[socket.id];
       }
-    });
-
-    // Handle chat messages
-    socket.on("chat:message", (message) => {
-      try {
-        const user = users[socket.id];
-        if (user) {
-          const { room, username } = user;
-
-          // Broadcast message to all users in the room
-          io.to(room).emit("chat:message", {
-            sender: socket.id,
-            username,
-            message,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      } catch (error) {
-        console.error("Error in chat:message handler:", error);
-      }
-    });
-
-    // Ping-pong to keep connection alive
-    socket.on("ping", () => {
-      socket.emit("pong");
     });
   });
-
-  // Log active connections every minute for debugging
-  setInterval(() => {
-    console.log("Active connections:", Object.keys(users).length);
-    console.log("Active rooms:", Object.keys(connections).length);
-  }, 60000);
-
-  // Return the io instance for potential external use
-  return io;
 };
 
 export { connectToSocket };

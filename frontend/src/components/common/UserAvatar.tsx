@@ -10,7 +10,13 @@ interface UserAvatarProps {
 
 const UserAvatar = ({ name, size = 40 }: UserAvatarProps) => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const { handleLogout } = useAuth();
+
+  const authContext = useAuth();
+  if (!authContext) {
+    throw new Error("authContext must be used within an AuthProvider");
+  }
+  const { handleLogout, userData } = authContext;
+
   const navigate = useNavigate();
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -21,13 +27,13 @@ const UserAvatar = ({ name, size = 40 }: UserAvatarProps) => {
     setAnchorEl(null);
   };
 
-  const handleLogoutClick = () => {
-    handleLogout();
+  const handleLogInClick = () => {
     handleClose();
+    navigate("/auth");
   };
 
-  const handleProfileClick = () => {
-    navigate("/home");
+  const handleLogoutClick = () => {
+    handleLogout();
     handleClose();
   };
 
@@ -59,8 +65,11 @@ const UserAvatar = ({ name, size = 40 }: UserAvatarProps) => {
           },
         }}
       >
-        <MenuItem onClick={handleProfileClick}>Profile</MenuItem>
-        <MenuItem onClick={handleLogoutClick}>Logout</MenuItem>
+        {userData?.isAuthenticated ? (
+          <MenuItem onClick={handleLogoutClick}>Logout</MenuItem>
+        ) : (
+          <MenuItem onClick={handleLogInClick}>SignUp / LogIn</MenuItem>
+        )}
       </Menu>
     </>
   );

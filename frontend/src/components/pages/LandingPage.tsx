@@ -4,7 +4,12 @@ import UserAvatar from "../common/UserAvatar";
 
 const LandingPage = () => {
   const router = useNavigate();
-  const { userData, handleLogout } = useAuth();
+  const authContext = useAuth();
+  if (!authContext) {
+    throw new Error("authContext must be used within an AuthProvider");
+  }
+
+  const { userData } = authContext;
 
   return (
     <>
@@ -35,7 +40,7 @@ const LandingPage = () => {
               <>
                 <button
                   className="hover:cursor-pointer"
-                  onClick={() => router("/auth")}
+                  onClick={() => router("/home")}
                 >
                   Join as Guest
                 </button>

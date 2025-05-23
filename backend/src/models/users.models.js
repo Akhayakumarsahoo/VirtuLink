@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Email is required"],
-      unque: [true, "Email already exists"],
+      unique: [true, "Email already exists"],
       trim: [true, "Email cannot have spaces"],
       lowercase: [true, "Email must be lowercase"],
     },

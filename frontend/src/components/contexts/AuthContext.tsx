@@ -31,21 +31,31 @@ interface AuthContextValue {
   loading: boolean;
 }
 
+const API_URL =
+  import.meta.env.MODE === "development"
+    ? "http://localhost:9000"
+    : import.meta.env.VITE_API_URL;
+
 const client = axios.create({
-  baseURL:
-    import.meta.env.MODE === "development"
-      ? "http://localhost:8000/api/users"
-      : "https://virtulink.onrender.com/api/users",
+  baseURL: `${API_URL}/api/users`,
   withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
+
+// Add response interceptor for better error handling
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const useAuth = () => {
   const auth = useContext(AuthContext);
-  if (!auth) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
   return auth;
 };
 
@@ -56,7 +66,7 @@ function AuthProvider({ children }: AuthProviderProps) {
 
   // Check if user is already authenticated
   useEffect(() => {
-    const checkAuth = async () => {
+    (async () => {
       try {
         const response = await client.get("/me");
         if (response.data.user) {
@@ -66,17 +76,13 @@ function AuthProvider({ children }: AuthProviderProps) {
             isAuthenticated: true,
           };
           setUserData(userData);
-          localStorage.setItem("userName", response.data.user.name);
         }
       } catch (error) {
         setUserData(null);
-        localStorage.removeItem("userName");
       } finally {
         setLoading(false);
       }
-    };
-
-    checkAuth();
+    })();
   }, []);
 
   const handleRegister = async (
@@ -98,7 +104,6 @@ function AuthProvider({ children }: AuthProviderProps) {
           isAuthenticated: true,
         };
         setUserData(userData);
-        localStorage.setItem("userName", response.data.user.name);
         navigate("/home");
       }
     } catch (error: any) {
@@ -120,7 +125,6 @@ function AuthProvider({ children }: AuthProviderProps) {
           isAuthenticated: true,
         };
         setUserData(userData);
-        localStorage.setItem("userName", response.data.user.name);
         navigate("/home");
       }
     } catch (error: any) {
@@ -132,7 +136,6 @@ function AuthProvider({ children }: AuthProviderProps) {
     try {
       await client.post("/logout");
       setUserData(null);
-      localStorage.removeItem("userName");
       navigate("/");
     } catch (error) {
       console.error("Logout failed:", error);
@@ -155,4 +158,4 @@ function AuthProvider({ children }: AuthProviderProps) {
   );
 }
 
-export { AuthProvider, AuthContext };
+export { AuthProvider };

@@ -1,11 +1,11 @@
-import * as React from "react";
+import { useState } from "react";
 import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
 import CssBaseline from "@mui/material/CssBaseline";
 import TextField from "@mui/material/TextField";
 import Paper from "@mui/material/Paper";
 import Box from "@mui/material/Box";
-import Grid from "@mui/material/Grid";
+import Stack from "@mui/material/Stack";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { Snackbar, CircularProgress } from "@mui/material";
@@ -15,14 +15,14 @@ import { useAuth } from "../contexts/AuthContext";
 const defaultTheme = createTheme();
 
 export default function Authentication() {
-  const [email, setEmail] = React.useState<string>("");
-  const [password, setPassword] = React.useState<string>("");
-  const [name, setName] = React.useState<string>("");
-  const [error, setError] = React.useState<string>("");
-  const [message, setMessage] = React.useState<string>("");
-  const [formState, setFormState] = React.useState<number>(0); // 0 for login, 1 for register
-  const [open, setOpen] = React.useState<boolean>(false);
-  const [loading, setLoading] = React.useState<boolean>(false);
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [name, setName] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [formState, setFormState] = useState<number>(0); // 0 for login, 1 for register
+  const [open, setOpen] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
 
   const authContext = useAuth();
 
@@ -58,14 +58,14 @@ export default function Authentication() {
 
   return (
     <ThemeProvider theme={defaultTheme}>
-      <Grid container component="main" sx={{ height: "100vh" }}>
+      <Box sx={{ display: "flex", height: "100vh" }}>
         <CssBaseline />
-        <Grid
-          item
-          xs={false}
-          sm={4}
-          md={7}
+
+        {/* Background image section (previously Grid xs={false} sm={4} md={7}) */}
+        <Box
           sx={{
+            display: { xs: "none", sm: "block" },
+            width: { sm: "33.33%", md: "58.33%" },
             backgroundImage: "url(background.png)",
             backgroundRepeat: "no-repeat",
             backgroundColor: (t) =>
@@ -76,11 +76,26 @@ export default function Authentication() {
             backgroundPosition: "center",
           }}
         />
-        <Grid item xs={12} sm={8} md={5} component={Paper} elevation={6} square>
+
+        {/* Form section (previously Grid xs={12} sm={8} md={5}) */}
+        <Box
+          component={Paper}
+          elevation={6}
+          square
+          sx={{
+            width: { xs: "100%", sm: "66.67%", md: "41.67%" },
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <Box
             sx={{
               my: 8,
               mx: 4,
+              width: "100%",
+              maxWidth: "450px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -90,7 +105,7 @@ export default function Authentication() {
               <LockOutlinedIcon />
             </Avatar>
 
-            <div>
+            <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
               <Button
                 variant={formState === 0 ? "contained" : "outlined"}
                 onClick={() => setFormState(0)}
@@ -105,9 +120,9 @@ export default function Authentication() {
               >
                 Sign Up
               </Button>
-            </div>
+            </Stack>
 
-            <Box component="form" noValidate sx={{ mt: 1 }}>
+            <Box component="form" noValidate sx={{ mt: 1, width: "100%" }}>
               {formState === 1 && (
                 <TextField
                   margin="normal"
@@ -131,7 +146,7 @@ export default function Authentication() {
                 label="Email Address"
                 name="email"
                 value={email}
-                autoFocus
+                autoFocus={formState === 0}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
               />
@@ -172,8 +187,8 @@ export default function Authentication() {
               </Button>
             </Box>
           </Box>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
 
       <Snackbar
         open={open}

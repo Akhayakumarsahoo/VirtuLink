@@ -18,19 +18,22 @@ const generateRandomRoomId = () => {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 };
 
-const HomeComponent = () => {
+const Home = () => {
   const navigate = useNavigate();
   const [roomId, setRoomId] = useState<string>("");
   const [username, setUsername] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [showError, setShowError] = useState<boolean>(false);
-  const { userData } = useAuth();
+
+  const authContext = useAuth();
+  if (!authContext) {
+    throw new Error("authContext must be used within an AuthProvider");
+  }
+  const { userData } = authContext;
 
   useEffect(() => {
-    // Load username from localStorage if available
-    const savedUsername = localStorage.getItem("userName");
-    if (savedUsername) {
-      setUsername(savedUsername);
+    if (userData) {
+      setUsername(userData.name);
     }
   }, []);
 
@@ -40,9 +43,6 @@ const HomeComponent = () => {
       setShowError(true);
       return;
     }
-
-    // Save username to localStorage
-    localStorage.setItem("userName", username);
 
     // Generate a random room ID
     const newRoomId = generateRandomRoomId();
@@ -63,10 +63,6 @@ const HomeComponent = () => {
       setShowError(true);
       return;
     }
-
-    // Save username to localStorage
-    localStorage.setItem("userName", username);
-
     // Navigate to the room
     navigate(`/room/${roomId}`);
   };
@@ -76,22 +72,28 @@ const HomeComponent = () => {
   };
 
   return (
-    <div className="h-screen w-screen bg-gray-900">
+    <div
+      className="h-screen w-screen bg-gray-900"
+      style={{
+        background: "url(background.png)",
+        backgroundSize: "cover",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
       <nav className="flex justify-between items-center p-5 bg-gray-800">
-        <div className="Logo">
+        <div onClick={() => navigate("/")} className="Logo cursor-pointer">
           <h1 className="text-white text-4xl font-medium">VirtuLink</h1>
         </div>
         <div className="flex items-center space-x-4">
-          <span className="text-white text-lg">Welcome, {userData?.name}</span>
+          <span className="text-white text-lg">
+            Welcome, {userData ? userData.name : "Guest User"}
+          </span>
           <UserAvatar name={userData?.name || ""} />
         </div>
       </nav>
       <Container maxWidth="lg">
         <Box sx={{ my: 4, textAlign: "center" }}>
-          <Typography variant="h3" component="h1" gutterBottom>
-            Virtulink
-          </Typography>
-          <Typography variant="h5" color="text.secondary" paragraph>
+          <Typography variant="h5" className="text-slate-300 ">
             High-quality video calls for everyone
           </Typography>
         </Box>
@@ -217,4 +219,4 @@ const HomeComponent = () => {
   );
 };
 
-export default HomeComponent;
+export default Home;
