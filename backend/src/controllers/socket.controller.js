@@ -1,20 +1,11 @@
 import { Server } from "socket.io";
 
 const connectToSocket = (server) => {
-  const allowedOrigins = [
-    process.env.NODE_ENV === "development"
-      ? "http://localhost:5173"
-      : "https://virtu-link.vercel.app",
-  ];
-
   const io = new Server(server, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-      allowedHeaders: ["*"],
+      origin: process.env.VITE_FRONTEND_URL || "http://localhost:5173",
       credentials: true,
     },
-    pingTimeout: 60000, // Increase ping timeout to prevent disconnections
   });
 
   // Store active connections and user information
