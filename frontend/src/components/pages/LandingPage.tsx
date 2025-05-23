@@ -4,16 +4,13 @@ import UserAvatar from "../common/UserAvatar";
 
 const LandingPage = () => {
   const router = useNavigate();
-<<<<<<< HEAD
+
   const authContext = useAuth();
   if (!authContext) {
     throw new Error("authContext must be used within an AuthProvider");
   }
 
   const { userData } = authContext;
-=======
-  const { userData } = useAuth();
->>>>>>> 058fb48f7ed5c5896619190b66efba830ff9e226
 
   return (
     <>
